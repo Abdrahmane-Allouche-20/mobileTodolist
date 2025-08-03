@@ -202,7 +202,7 @@ export async function scheduleRepeatingReminder(
             },
             trigger: {
                 hour,
-                minute: ,
+                minute, // Fixed: removed the extra comma
                 repeats: true,
             },
         });
@@ -286,5 +286,186 @@ export async function requestNotificationPermissions(): Promise<boolean> {
     } catch (error) {
         console.error('Error requesting notification permissions:', error);
         return false;
+    }
+}
+
+// Schedule recurring reminders every 3 hours for remaining tasks
+export async function scheduleRecurringTaskReminders(
+    remainingTasks: string[], // Array of task titles
+    intervalHours: number = 3 // Default 3 hours
+): Promise<string[]> {
+    const notificationIds: string[] = [];
+    
+    try {
+        // Cancel any existing recurring reminders first
+        await cancelAllRecurringReminders();
+        
+        if (remainingTasks.length === 0) {
+            console.log('No remaining tasks to set reminders for');
+            return [];
+        }
+
+        // Schedule reminders for the next 24 hours (8 reminders total if every 3 hours)
+        const totalReminders = Math.floor(24 / intervalHours);
+        
+        for (let i = 0; i < totalReminders; i++) {
+            const delayInSeconds = (i + 1) * intervalHours * 60 * 60; // Convert hours to seconds
+            
+            const taskList = remainingTasks.length > 3 
+                ? `${remainingTasks.slice(0, 3).join(', ')} and ${remainingTasks.length - 3} more...`
+                : remainingTasks.join(', ');
+
+            const notificationId = await Notifications.scheduleNotificationAsync({
+                content: {
+                    title: `⏰ Task Reminder (${remainingTasks.length} pending)`,
+                    body: `Don't forget: ${taskList}`,
+                    data: { 
+                        type: 'recurring_reminder',
+                        taskCount: remainingTasks.length,
+                        tasks: remainingTasks 
+                    },
+                    sound: 'default',
+                },
+                trigger: {
+                    seconds: delayInSeconds,
+                },
+            });
+            
+            if (notificationId) {
+                notificationIds.push(notificationId);
+            }
+        }
+
+        // Store notification IDs for later cancellation
+        await storeRecurringReminderIds(notificationIds);
+        
+        console.log(`Scheduled ${notificationIds.length} recurring reminders every ${intervalHours} hours`);
+        return notificationIds;
+        
+    } catch (error) {
+        console.error('Error scheduling recurring reminders:', error);
+        return [];
+    }
+}
+
+// Schedule daily recurring reminders at specific times
+export async function scheduleDailyTaskReminders(
+    remainingTasks: string[],
+    reminderTimes: { hour: number; minute: number }[] = [
+        { hour: 9, minute: 0 },   // 9:00 AM
+        { hour: 12, minute: 0 },  // 12:00 PM
+        { hour: 15, minute: 0 },  // 3:00 PM
+        { hour: 18, minute: 0 },  // 6:00 PM
+        { hour: 21, minute: 0 }   // 9:00 PM
+    ]
+): Promise<string[]> {
+    const notificationIds: string[] = [];
+    
+    try {
+        if (remainingTasks.length === 0) {
+            return [];
+        }
+
+        for (const time of reminderTimes) {
+            const taskList = remainingTasks.length > 3 
+                ? `${remainingTasks.slice(0, 3).join(', ')} and ${remainingTasks.length - 3} more...`
+                : remainingTasks.join(', ');
+
+            const notificationId = await Notifications.scheduleNotificationAsync({
+                content: {
+                    title: `📋 Daily Task Reminder (${remainingTasks.length} pending)`,
+                    body: `Remaining tasks: ${taskList}`,
+                    data: { 
+                        type: 'daily_reminder',
+                        taskCount: remainingTasks.length,
+                        tasks: remainingTasks 
+                    },
+                    sound: 'default',
+                },
+                trigger: {
+                    hour: time.hour,
+                    minute: time.minute,
+                    repeats: true,
+                },
+            });
+            
+            if (notificationId) {
+                notificationIds.push(notificationId);
+            }
+        }
+
+        await storeRecurringReminderIds(notificationIds);
+        return notificationIds;
+        
+    } catch (error) {
+        console.error('Error scheduling daily reminders:', error);
+        return [];
+    }
+}
+
+// Helper function to store reminder IDs
+async function storeRecurringReminderIds(ids: string[]): Promise<void> {
+    try {
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        await AsyncStorage.setItem('@recurring_reminder_ids', JSON.stringify(ids));
+    } catch (error) {
+        console.error('Error storing reminder IDs:', error);
+    }
+}
+
+// Helper function to get stored reminder IDs
+async function getRecurringReminderIds(): Promise<string[]> {
+    try {
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        const ids = await AsyncStorage.getItem('@recurring_reminder_ids');
+        return ids ? JSON.parse(ids) : [];
+    } catch (error) {
+        console.error('Error getting reminder IDs:', error);
+        return [];
+    }
+}
+
+// Cancel all recurring reminders
+export async function cancelAllRecurringReminders(): Promise<void> {
+    try {
+        const reminderIds = await getRecurringReminderIds();
+        
+        for (const id of reminderIds) {
+            await Notifications.cancelScheduledNotificationAsync(id);
+        }
+        
+        // Clear stored IDs
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        await AsyncStorage.removeItem('@recurring_reminder_ids');
+        
+        console.log(`Cancelled ${reminderIds.length} recurring reminders`);
+    } catch (error) {
+        console.error('Error cancelling recurring reminders:', error);
+    }
+}
+
+// Update recurring reminders when tasks change
+export async function updateRecurringReminders(
+    allTasks: { id: string; title: string; completed: boolean }[],
+    intervalHours: number = 3
+): Promise<void> {
+    try {
+        const remainingTasks = allTasks
+            .filter(task => !task.completed)
+            .map(task => task.title);
+        
+        if (remainingTasks.length === 0) {
+            // No remaining tasks, cancel all reminders
+            await cancelAllRecurringReminders();
+            await showInstantNotification(
+                'All Done! 🎉',
+                'No more tasks to remind you about!'
+            );
+        } else {
+            // Update reminders with current remaining tasks
+            await scheduleRecurringTaskReminders(remainingTasks, intervalHours);
+        }
+    } catch (error) {
+        console.error('Error updating recurring reminders:', error);
     }
 }

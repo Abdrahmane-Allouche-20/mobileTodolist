@@ -1,6 +1,6 @@
 import { TaskProvider } from '@/context/tasksContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
-import { usePushNotifications } from '@/UTILS/notifications';
+import { usePushNotifications } from '@/utils/notifications'; // Changed from '@/UTILS/notifications'
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
@@ -25,16 +25,15 @@ export default function RootLayout() {
   }, [expoPushToken]);
 
   if (!loaded) {
-    // Async font loading only occurs in development.
     return null;
   }
 
   return (
     <SafeAreaProvider>
       <TaskProvider>
-        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+        <ThemeProvider value={colorScheme === 'light' ? DarkTheme : DefaultTheme}>
           <Stack>
-            <Stack.Screen name='index' options={{headerShown:false }} />
+            <Stack.Screen name='index' options={{ headerShown: false }} />
             <Stack.Screen name="tasks" options={{ headerShown: false }} />
           </Stack>  
           <StatusBar style="auto" />
