@@ -30,9 +30,9 @@
         "expo-splash-screen",
         {
           "image": "./assets/images/checklist.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "imageWidth": 150,
+          "resizeMode": "cover",
+          "backgroundColor": "transparent"
         }
       ]
     ],
